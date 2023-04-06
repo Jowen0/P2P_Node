@@ -4,7 +4,8 @@
 ```
 npm i
 
-npm start
+node .\index.js 
+
 ```
 
 ## Web-RTC 실행방법
