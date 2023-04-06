@@ -9,7 +9,7 @@ npm start
 
 ## Web-RTC 실행방법
 ```
-npm i yarn
+npm i - yarn
 
 yarn
 
