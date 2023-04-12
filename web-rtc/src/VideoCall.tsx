@@ -110,7 +110,8 @@ const VideoCall = () => {
   useEffect(() => {
     console.log('start')
     // 소켓 연결
-    socketRef.current = io("localhost:8080");
+    // socketRef.current = io("localhost:8080");
+    socketRef.current = io("https://p2-p-node-ckbz.vercel.app/");
 
     // peerConnection 생성
     // iceServers는 stun sever설정이며 google의 public stun server를 사용하였습니다.
