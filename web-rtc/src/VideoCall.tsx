@@ -4,7 +4,7 @@ import { io, Socket } from "socket.io-client";
 
 const VideoCall = () => {
   // 소켓정보를 담을 Ref
-  const socketRef = useRef<Socket>();
+  const socketRef = useRef<WebSocket>();
   // 자신의 비디오
   const myVideoRef = useRef<HTMLVideoElement>(null);
   // 다른사람의 비디오
@@ -36,7 +36,7 @@ const VideoCall = () => {
         if (!pcRef.current) {
           return;
         }
-        
+
         pcRef.current.addTrack(track, stream);
       });
 
@@ -47,11 +47,15 @@ const VideoCall = () => {
             return;
           }
           console.log("recv candidate");
-          socketRef.current.emit("candidate", e.candidate, roomName);
+          let candidate = {
+            type : "candidate",
+            data: e.candidate,
+            roomName: roomName}
+          socketRef.current.send(JSON.stringify(candidate));
         }
       };
 
-      // 구 addStream 현 track 이벤트 
+      // 구 addStream 현 track 이벤트
       pcRef.current.ontrack = (e) => {
         console.log('여기')
         if (remoteVideoRef.current) {
@@ -71,12 +75,15 @@ const VideoCall = () => {
 
     try {
       // offer 생성
-      const sdp = await pcRef.current.createOffer();
+      const {sdp, type} = await pcRef.current.createOffer();
       // 자신의 sdp로 LocalDescription 설정
-      await pcRef.current.setLocalDescription(sdp);
+      await pcRef.current.setLocalDescription({sdp, type});
       console.log("sent the offer");
+      let offer = {sdp, type, roomName:'roomName'}
+      console.log({roomName:"roomName", sdp, type})
+      // console.log(JSON.parse(JSON.stringify(offer)))
       // offer 전달
-      socketRef.current.emit("offer", sdp, roomName);
+      socketRef.current.send(JSON.stringify(offer));
     } catch (e) {
       console.error(e);
     }
@@ -101,7 +108,10 @@ const VideoCall = () => {
       await pcRef.current.setLocalDescription(answerSdp);
 
       console.log("sent the answer");
-      socketRef.current.emit("answer", answerSdp, roomName);
+      let answer = {type : "answer",
+        data: answerSdp,
+        roomName:roomName}
+      socketRef.current.send(JSON.stringify(answer));
     } catch (e) {
       console.error(e);
     }
@@ -111,7 +121,7 @@ const VideoCall = () => {
     console.log('start')
     // 소켓 연결
     // socketRef.current = io("localhost:8080");
-    socketRef.current = io("https://p2-p-node-ckbz.vercel.app/");
+    socketRef.current = new WebSocket('ws://localhost/socket');
 
     // peerConnection 생성
     // iceServers는 stun sever설정이며 google의 public stun server를 사용하였습니다.
@@ -124,55 +134,63 @@ const VideoCall = () => {
     });
 
     // 기존 유저가 있고, 새로운 유저가 들어왔다면 오퍼생성
-    socketRef.current.on("all_users", (allUsers: Array<{ id: string }>) => {
+    socketRef.current.onmessage= event=>{
+      console.log(event.data);
+        createOffer();
+    };
+        /*"all_users", (allUsers: Array<{ id: string }>) => {
       console.log("all_users");
       if (allUsers.length > 0) {
         createOffer();
       }
-    });
+    });*/
 
     // offer를 전달받은 PeerB만 해당됩니다
     // offer를 들고 만들어둔 answer 함수 실행
-    socketRef.current.on("getOffer", (sdp: RTCSessionDescription) => {
+    /*socketRef.current.on("getOffer", (sdp: RTCSessionDescription) => {
       console.log("recv Offer");
       createAnswer(sdp);
-    });
+    });*/
 
     // answer를 전달받을 PeerA만 해당됩니다.
     // answer를 전달받아 PeerA의 RemoteDescription에 등록
-    socketRef.current.on("getAnswer", async (sdp: RTCSessionDescription) => {
+    /*socketRef.current.on("getAnswer", async (sdp: RTCSessionDescription) => {
       console.log("recv Answer");
       if (!pcRef.current) {
         return;
       }
       await pcRef.current.setRemoteDescription(sdp);
-    });
+    });*/
 
     // 서로의 candidate를 전달받아 등록
-    socketRef.current.on("getCandidate", async (candidate: RTCIceCandidate) => {
+    /*socketRef.current.on("getCandidate", async (candidate: RTCIceCandidate) => {
       if (!pcRef.current) {
         return;
       }
 
       await pcRef.current.addIceCandidate(candidate);
-    });
+    });*/
 
     const test = async (socketRef: any) => {
-      
+
       await getMedia();
-      
+
+      console.log("join_room")
+      let join_room  = {
+        type : "join_room",
+        roomName : "roomName"
+      }
       // 마운트시 해당 방의 roomName을 서버에 전달
-      socketRef.current.emit("join_room", {
-        room: roomName,
-      });
+      socketRef.current.send(JSON.stringify(join_room));
     }
 
-    test(socketRef)
+      test(socketRef)
+
 
     return () => {
-      if (socketRef.current) {
+      /*if (socketRef.current) {
         socketRef.current.disconnect();
-      }
+      }*/
 
       if (pcRef.current) {
         pcRef.current.close();
