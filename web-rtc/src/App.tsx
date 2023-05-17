@@ -8,6 +8,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path='/' element={<VideoCall />} />
         <Route path='/:roomName/' element={<VideoCall />} />
       </Routes>
     </BrowserRouter>
