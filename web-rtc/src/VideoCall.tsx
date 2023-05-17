@@ -1,23 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 
-// Const
-import { CLOSE_CODE } from "./const";
-
 // Hook
-import useClose from "./hook/useClose";
 import useSendToServer from "./hook/useSendToServer";
 
 // Type
 import { Data } from "./type";
 
 const VideoCall = () => {
-  // 소켓 관련
+  // 소켓정보를 담을 Ref
   const socketRef = useRef<WebSocket>();
   const { sendToServer } = useSendToServer()
-
-  // 연결 해제 관련
-  const { closeAll } = useClose();
 
   // 자신의 비디오
   const myVideoRef = useRef<HTMLVideoElement>(null);
@@ -39,7 +32,9 @@ const VideoCall = () => {
         audio: false,
       });
 
-      if (myVideoRef.current) myVideoRef.current.srcObject = stream;
+      if (myVideoRef.current) {
+        myVideoRef.current.srcObject = stream;
+      }
 
       if (!(ws && pc)) return;
 
@@ -70,51 +65,54 @@ const VideoCall = () => {
     }
   }, [sendToServer]);
 
-  const createOffer = useCallback(async (ws: WebSocket | undefined, pc: RTCPeerConnection | undefined) => {
+  const createOffer = useCallback(async (ws: WebSocket | undefined) => {
     console.log("create Offer");
-
-    if (!(ws && pc)) return;
+    if (!(pcRef.current && socketRef.current)) {
+      return;
+    }
 
     try {
       // offer 생성
-      const sdp = await pc.createOffer();
+      const sdp = await pcRef.current.createOffer();
 
       // 자신의 sdp로 LocalDescription 설정
-      await pc.setLocalDescription(sdp);
+      await pcRef.current.setLocalDescription(sdp);
 
       // offer 전달
       // const data = { roomName, ...sdp }; // 안되면 아래 주석으로 실행
       const data = { type: sdp.type, roomName, data: sdp.sdp };
       console.log("sent the offer", data);
 
-      sendToServer(ws, data);
+      sendToServer(ws, data)
 
     } catch (e) {
       console.error(e);
     }
   }, [sendToServer]);
 
-  const createAnswer = useCallback(async (ws: WebSocket | undefined, pc: RTCPeerConnection | undefined, sdp: RTCSessionDescription) => {
+  const createAnswer = useCallback(async (ws: WebSocket | undefined, sdp: RTCSessionDescription) => {
     // sdp : PeerA에게서 전달받은 offer
-    console.log("createAnswer");
 
-    if (!(ws && pc)) return;
+    console.log("createAnswer");
+    if (!(pcRef.current && socketRef.current)) {
+      return;
+    }
 
     try {
       // PeerA가 전달해준 offer를 RemoteDescription에 등록해 줍시다.
-      await pc.setRemoteDescription(sdp);
+      await pcRef.current.setRemoteDescription(sdp);
 
       // answer생성해주고
-      const answerSdp = await pc.createAnswer();
+      const answerSdp = await pcRef.current.createAnswer();
 
       // answer를 LocalDescription에 등록해 줍니다. (PeerB 기준)
-      await pc.setLocalDescription(answerSdp);
+      await pcRef.current.setLocalDescription(answerSdp);
 
       // const data = { roomName, ...answerSdp }; // 안되면 아래 주석으로 실행
       const data = { type: answerSdp.type, roomName, data: answerSdp.sdp };
       console.log("sent the answer", data);
 
-      sendToServer(ws, data);
+      sendToServer(ws, data)
 
     } catch (e) {
       console.error(e);
@@ -123,8 +121,8 @@ const VideoCall = () => {
 
   useEffect(() => {
     console.log('start')
-
     // 소켓 연결
+    // socketRef.current = io("localhost:8080");
     // socketRef.current = new WebSocket('ws://localhost/socket');
     socketRef.current = new WebSocket('ws://bitchat-server.lookthis.co.kr/socket');
     const ws = socketRef.current;
@@ -140,39 +138,30 @@ const VideoCall = () => {
     });
     const pc = pcRef.current;
 
-    // 서버 메세지 수신 시
     ws.onmessage = async (event) => {
-      console.log(event.data);
-      const { type, data:receiveData }: Data = JSON.parse(event.data);
-
-      console.log(type, receiveData);
-      
-      if(!type && !receiveData) return;
+      const { type, data }: Data = event.data;
+      const parsingData = JSON.parse(data);
 
       switch (type) {
         // 기존 유저가 있고, 새로운 유저가 들어왔다면 오퍼생성
         case 'all_users':
           console.log("all_users");
-          if ('allUsers' in receiveData && receiveData.allUsers.length > 0) createOffer(ws, pc);
+          if ('allUsers' in parsingData && parsingData.allUsers.length > 0) createOffer(ws);
 
           break;
         case 'getOffer':
           console.log("recv Offer");
-          if ('sdp' in receiveData) createAnswer(ws, pc, receiveData.sdp as RTCSessionDescription);
+          if ('sdp' in parsingData) createAnswer(ws, parsingData.sdp as RTCSessionDescription);
 
           break;
         case 'getAnswer':
           console.log("recv Answer");
-          if ('sdp' in receiveData) await pc.setRemoteDescription(receiveData.sdp as RTCSessionDescription);
+          if ('sdp' in parsingData) await pc.setRemoteDescription(parsingData.sdp as RTCSessionDescription);
 
           break;
         case 'getCandidate':
           console.log("recv Offer");
-          if ('candidate' in receiveData) await pc.addIceCandidate(receiveData.candidate as RTCIceCandidate);
-
-          break;
-        case 'room_full':
-          console.log("room_full");
+          if ('candidate' in parsingData) await pc.addIceCandidate(parsingData.candidate as RTCIceCandidate);
 
           break;
         default:
@@ -180,27 +169,46 @@ const VideoCall = () => {
       }
     };
 
-    // 소켓 연결 완료 시
-    ws.onopen = async (event) => {
-      console.log('Connected Success')
+    // const test = async (socketRef: any) => {
 
-      await getMedia(ws, pc);
+    //   await getMedia(ws, pc);
 
+    //   console.log("join_room")
+    //   let join_room  = {
+    //     type : "join_room",
+    //     roomName : "roomName"
+    //   }
+    //   // 마운트시 해당 방의 roomName을 서버에 전달
+    //   socketRef.current.send(JSON.stringify(join_room));
+    // }
+
+    // test(socketRef);
+
+    getMedia(ws, pc)
+    .then(() => {
+      console.log("join_room");
       const data = {
         type: "join_room",
         roomName
       };
-      
-      // 해당 방의 roomName을 서버에 전달
-      console.log("join_room");
-      sendToServer(ws, data);
-    };
 
-    // 언마운트시 연결 종료
+      // 마운트시 해당 방의 roomName을 서버에 전달
+      sendToServer(ws, data);
+    })
+    // .catch((error) => {
+    //   console.log(error)
+    // });
+
     return () => {
-      closeAll(CLOSE_CODE.RERENDER, ws, pc);
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+
+      if (pcRef.current) {
+        pcRef.current.close();
+      }
     };
-  }, [sendToServer, closeAll]);
+  }, [sendToServer]);
 
   return (
     <div>
